@@ -22,19 +22,40 @@ const getDashboardRoute = (role) => {
   }
 };
 
-// 📌 Register User
-// 📌 Register User
+// 📌 Register User (SuperAdmin only for now)
 export const registerUser = async (req, res) => {
   try {
-    const { name, surname, email, mobile, whatsapp, itsNumber, password, role } = req.body;
+    const {
+      name,
+      surname,
+      email,
+      mobile,
+      whatsapp,
+      itsNumber,
+      password,
+      role,
+      designation,
+      zone,
+    } = req.body;
 
+    // Check duplicate ITS or email
     const userExists = await User.findOne({ $or: [{ email }, { itsNumber }] });
     if (userExists)
       return res.status(400).json({ message: "User with this email or ITS number already exists" });
 
-    const user = await User.create({ name, surname, email, mobile, whatsapp, itsNumber, password, role });
+    const user = await User.create({
+      name,
+      surname,
+      email,
+      mobile,
+      whatsapp,
+      itsNumber,
+      password,
+      role: role || "Member", // default role
+      designation: designation || "Member", // default designation
+      zone: zone || null, // optional
+    });
 
-    // Always return user inside `member` field
     res.status(201).json({
       member: {
         _id: user._id,
@@ -42,9 +63,12 @@ export const registerUser = async (req, res) => {
         surname: user.surname,
         email: user.email,
         mobile: user.mobile,
+        whatsapp: user.whatsapp,
         itsNumber: user.itsNumber,
         role: user.role,
-        status: user.status || "active", // default if not present
+        designation: user.designation,
+        zone: user.zone,
+        status: user.status || "active",
       },
       message: `${user.role} registered successfully`,
     });
@@ -70,8 +94,10 @@ export const loginUser = async (req, res) => {
       email: user.email,
       itsNumber: user.itsNumber,
       role: user.role,
+      designation: user.designation,
+      zone: user.zone,
       token: generateToken(user),
-      redirectTo: getDashboardRoute(user.role),
+      redirectTo: getDashboardRoute(user.role), // redirect path based on role
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -88,7 +114,7 @@ export const getMembers = async (req, res) => {
   }
 };
 
-// 📌 Update member (details or role)
+// 📌 Update member (details, role, designation, zone)
 export const updateMember = async (req, res) => {
   try {
     const { id } = req.params;

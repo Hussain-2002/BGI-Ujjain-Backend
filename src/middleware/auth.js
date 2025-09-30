@@ -9,17 +9,17 @@ export const auth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
+    req.user = decoded; // req.user.role will be like "SuperAdmin", "Admin", etc.
     next();
   } catch (err) {
     return res.status(401).json({ msg: "Token is not valid" });
   }
 };
 
-// ✅ Only SuperAdmin
-export const superAdminOnly = (req, res, next) => {
-  if (req.user.role !== "SuperAdmin") {
-    return res.status(403).json({ msg: "Access denied, SuperAdmin only" });
+// ✅ Middleware to allow one or more roles
+export const allowRoles = (...roles) => (req, res, next) => {
+  if (!roles.includes(req.user.role)) {
+    return res.status(403).json({ msg: `Access denied, requires role: ${roles.join(", ")}` });
   }
   next();
 };

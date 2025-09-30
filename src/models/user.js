@@ -11,18 +11,32 @@ const userSchema = new mongoose.Schema(
     whatsapp: { type: String },
     itsNumber: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    status: {
-    type: String,
-    enum: ["active", "inactive"],
-    default: "active",
-  },
 
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active",
+    },
 
     // Role management
     role: {
       type: String,
       enum: ["SuperAdmin", "Admin", "Captain", "Finance", "Member"],
       default: "Member",
+    },
+
+    // 🆕 Designation field
+    designation: {
+      type: String,
+      enum: ["Captain", "Vice Captain", "Admin", "Member"],
+      default: "Member",
+    },
+
+    // 🆕 Zone field
+    zone: {
+      type: String,
+      enum: ["Najmi", "Safiee", "Hakimi", "Ibrahim", "Taiyebi"],
+      required: false, // not every role may need it
     },
 
     // 🔑 Member-only field
@@ -55,7 +69,6 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 userSchema.post("save", async function (doc, next) {
   try {
     // Example: Send welcome/notification email here
-    // await sendMail(doc.email, "Welcome", `Hello ${doc.name}, welcome aboard!`);
     next();
   } catch (err) {
     console.error("Email sending failed:", err.message);
@@ -64,4 +77,3 @@ userSchema.post("save", async function (doc, next) {
 });
 
 export default mongoose.models.User || mongoose.model("User", userSchema);
-
