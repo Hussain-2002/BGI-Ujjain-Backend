@@ -6,7 +6,7 @@ import cors from "cors";
 
 // Routes
 import authRoutes from "./src/routes/auth.js";
-// import adminRoutes from "./src/routes/admin.js";
+import adminRoutes from "./src/routes/admin.js";
 
 // Mailer utility
 import { verifyMailer } from "./src/utils/mailer.js";
@@ -129,7 +129,7 @@ mongoose
 
 // Routes
 app.use("/api/auth", authRoutes);
-// app.use("/api/admin", adminRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Health check
 app.get("/", (req, res) => {
