@@ -1,6 +1,6 @@
 // src/routes/admin.js
 import express from "express";
-import authMiddleware from "../middleware/authMiddleware.js";
+import authMiddleware from "../middleware/auth.js";
 
 // Models
 import User from "../models/User.js";
