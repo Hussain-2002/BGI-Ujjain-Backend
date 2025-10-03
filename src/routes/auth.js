@@ -228,16 +228,6 @@ router.post("/members", auth, allowRoles("SuperAdmin"), async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 });
-// 🔌 Get logged-in user profile
-router.get("/profile", auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ msg: "User not found" });
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ msg: "Server error" });
-  }
-});
 // 📌 Update member (details or role)
 router.put("/members/:id", auth, allowRoles("SuperAdmin"), async (req, res) => {
   try {
@@ -283,5 +273,72 @@ router.put("/members/:id/password", auth, allowRoles("SuperAdmin"), async (req, 
     res.status(500).json({ msg: "Server error" });
   }
 });
+// =================== USER PROFILE =================== //
+// 🔌 Get logged-in user profile
+router.get("/profile", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+    if (!user) return res.status(404).json({ msg: "User not found" });
+    res.json(user);
+  } catch (err) {
+    console.error("Profile fetch error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+// Add this after profile route:
 
+// 🔌 Get accessible dashboards for current user
+router.get("/accessible-dashboards", auth, async (req, res) => {
+  try {
+    const role = req.user.role;
+    let dashboards = [];
+
+    switch (role) {
+      case "SuperAdmin":
+        dashboards = [
+          { name: "SuperAdmin", path: "/SuperAdminDashboard", icon: "Dashboard" },
+          { name: "Admin", path: "/admin-dashboard", icon: "AdminPanel" },
+          { name: "Captain", path: "/captain-dashboard", icon: "Shield" },
+          { name: "Finance", path: "/finance-dashboard", icon: "AccountBalance" },
+          { name: "Member", path: "/member-dashboard", icon: "Person" }
+        ];
+        break;
+      
+      case "Admin":
+        dashboards = [
+          { name: "Admin", path: "/admin-dashboard", icon: "AdminPanel" },
+          { name: "Captain", path: "/captain-dashboard", icon: "Shield" },
+          { name: "Finance", path: "/finance-dashboard", icon: "AccountBalance" },
+          { name: "Member", path: "/member-dashboard", icon: "Person" }
+        ];
+        break;
+      
+      case "Captain":
+        dashboards = [
+          { name: "Captain", path: "/captain-dashboard", icon: "Shield" },
+          { name: "Member", path: "/member-dashboard", icon: "Person" }
+        ];
+        break;
+      
+      case "Finance":
+        dashboards = [
+          { name: "Finance", path: "/finance-dashboard", icon: "AccountBalance" }
+        ];
+        break;
+      
+      case "Member":
+        dashboards = [
+          { name: "Member", path: "/member-dashboard", icon: "Person" }
+        ];
+        break;
+      
+      default:
+        dashboards = [];
+    }
+
+    res.json({ role, dashboards });
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
+  }
+});
 export default router;
