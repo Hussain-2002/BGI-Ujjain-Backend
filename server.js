@@ -7,7 +7,7 @@ import cors from "cors";
 // Routes
 import authRoutes from "./src/routes/auth.js";
 import adminRoutes from "./src/routes/admin.js";
-
+import dutyChartRoutes from "./src/routes/dutyChart.js";
 // Mailer utility
 import { verifyMailer } from "./src/utils/mailer.js";
 
@@ -38,7 +38,7 @@ console.log("🌍 Environment:", process.env.NODE_ENV || "development");
 const corsOptions = {
   origin: (origin, callback) => {
     // 🔧 Debug: Har request ka origin log karo
-    console.log("🌐 Incoming request origin:", origin || "no-origin");
+    console.log("🌍 Incoming request origin:", origin || "no-origin");
 
     if (!origin) {
       console.log("✅ No origin (server-to-server) - allowed");
@@ -112,7 +112,7 @@ mongoose
     console.log("✅ MongoDB connected");
 
     // Verify mailer
-    console.log("🔍 Verifying email service...");
+    console.log("📧 Verifying email service...");
     verifyMailer()
       .then(() => console.log("✅ Email service verification completed"))
       .catch((err) =>
@@ -130,6 +130,7 @@ mongoose
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/dutychart", dutyChartRoutes);
 
 // Health check
 app.get("/", (req, res) => {
