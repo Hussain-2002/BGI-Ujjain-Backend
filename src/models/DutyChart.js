@@ -11,26 +11,28 @@ const dutyChartSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    // allow ObjectId OR string
     jamiatIncharge: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // Role: Commander
+      type: mongoose.Schema.Types.Mixed,
       required: true,
     },
+
     eventIncharge: {
       captain: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User", // Role: Captain
+        type: mongoose.Schema.Types.Mixed,
       },
       viceCaptain: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User", // Role: Vice Captain
+        type: mongoose.Schema.Types.Mixed,
       },
     },
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User", // Admin who created chart
       required: true,
     },
+
     dutyDate: {
       type: Date,
       required: true,
@@ -43,24 +45,22 @@ const dutyChartSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
     assignments: [
       {
         location: { type: String, required: true },
         area: { type: String, required: true },
         inchargeOfficer: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User", // Role: Captain
+          type: mongoose.Schema.Types.Mixed,
         },
         subInchargeOfficer: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User", // Role: Vice Captain
+          type: mongoose.Schema.Types.Mixed,
         },
         task: { type: String, required: true },
         team: { type: String }, // e.g. "Team Alpha"
         members: [
           {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "User", // Role: Member
+            type: mongoose.Schema.Types.Mixed,
           },
         ],
       },

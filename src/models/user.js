@@ -12,6 +12,12 @@ const userSchema = new mongoose.Schema(
     itsNumber: { type: String, required: true, unique: true },
     password: { type: String, required: true },
 
+    // 🆕 Profile Picture
+    profilePicture: {
+      type: String,
+      default: null, // Will store URL or base64 string
+    },
+
     status: {
       type: String,
       enum: ["active", "inactive"],
@@ -36,14 +42,14 @@ const userSchema = new mongoose.Schema(
     zone: {
       type: String,
       enum: ["Najmi", "Safiee", "Hakimi", "Ibrahim", "Taiyebi"],
-      required: false, // not every role may need it
+      required: false,
     },
 
-    // 🔑 Member-only field
+    // 🔒 Member-only field
     mustChangePassword: {
       type: Boolean,
       default: function () {
-        return this.role === "Member"; // only true if role is Member
+        return this.role === "Member";
       },
     },
 
@@ -65,7 +71,7 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// 📌 Hook for nodemailer (placeholder, won't break)
+// 🔌 Hook for nodemailer (placeholder, won't break)
 userSchema.post("save", async function (doc, next) {
   try {
     // Example: Send welcome/notification email here

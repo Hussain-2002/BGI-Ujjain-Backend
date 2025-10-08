@@ -3,6 +3,9 @@ import dotenv from "dotenv";
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 
 // Routes
 import authRoutes from "./src/routes/auth.js";
@@ -15,8 +18,23 @@ dotenv.config();
 
 const app = express();
 
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads', 'profiles');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log("📁 Created uploads/profiles directory");
+}
+
 // Middleware
 app.use(express.json());
+
+// 🆕 Serve static files from uploads folder (BEFORE CORS)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+console.log("📁 Static files serving from:", path.join(__dirname, 'uploads'));
 
 // Allowed origins from env
 const allowedOrigins = [
@@ -151,6 +169,18 @@ app.get("/health", (req, res) => {
   });
 });
 
+// 🆕 Test endpoint to check if uploads directory is accessible
+app.get("/api/test-uploads", (req, res) => {
+  const uploadsPath = path.join(__dirname, 'uploads', 'profiles');
+  const exists = fs.existsSync(uploadsPath);
+  
+  res.json({
+    uploadsDirectory: uploadsPath,
+    exists,
+    readable: exists ? fs.readdirSync(uploadsPath).length : 0,
+  });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error("❌ Server Error:", err.message);
@@ -162,6 +192,21 @@ app.use((err, req, res, next) => {
       success: false,
       message: "CORS policy: Origin not allowed",
       origin: req.headers.origin || "no-origin",
+    });
+  }
+
+  // Multer file upload errors
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({
+      success: false,
+      message: "File size too large. Maximum size is 5MB.",
+    });
+  }
+
+  if (err.message === "Only image files are allowed!") {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
     });
   }
   
@@ -190,6 +235,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log("\n" + "=".repeat(50));
   console.log(`🌐 Server running on port ${PORT}`);
+  console.log(`📁 Uploads directory: ${uploadsDir}`);
   console.log(`📧 Email service: SendGrid`);
   console.log(`🔗 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`🕐 Started at: ${new Date().toISOString()}`);
