@@ -20,8 +20,74 @@ const isMember = (role) => role === "Member";
 // Check if value is a valid ObjectId
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+// helper: keep typed strings or objectId-strings, return null for empty
+const normalizeValue = (val) => {
+  if (val === undefined || val === null) return null;
+  if (typeof val === "string") {
+    const s = val.trim();
+    return s === "" ? null : s;
+  }
+  if (isValidObjectId(val)) return String(val);
+  return val;
+};
+
+/**
+ * Attach user objects for any fields that are valid ObjectId strings.
+ * Accepts array of docs (plain objects ok or mongoose docs).
+ * Returns array of plain objects with replacements done.
+ */
+const attachUserObjects = async (docs) => {
+  if (!Array.isArray(docs) || docs.length === 0) return docs;
+  // convert docs to plain objects
+  const plain = docs.map((d) => JSON.parse(JSON.stringify(d)));
+  const idSet = new Set();
+  const pushIfValid = (v) => { if (isValidObjectId(v)) idSet.add(String(v)); };
+
+  for (const doc of plain) {
+    if (doc.jamiatIncharge) pushIfValid(doc.jamiatIncharge);
+    if (doc.eventIncharge?.captain) pushIfValid(doc.eventIncharge.captain);
+    if (doc.eventIncharge?.viceCaptain) pushIfValid(doc.eventIncharge.viceCaptain);
+    if (doc.createdBy) pushIfValid(doc.createdBy);
+    for (const a of doc.assignments || []) {
+      if (a.inchargeOfficer) pushIfValid(a.inchargeOfficer);
+      if (a.subInchargeOfficer) pushIfValid(a.subInchargeOfficer);
+      for (const m of (a.members || [])) pushIfValid(m);
+    }
+  }
+
+  if (idSet.size === 0) return plain;
+
+  const ids = Array.from(idSet);
+  const users = await User.find({ _id: { $in: ids } })
+    .select("name surname itsNumber role")
+    .lean();
+
+  const usersMap = {};
+  users.forEach((u) => (usersMap[String(u._id)] = u));
+
+  // replace id strings with user objects where possible
+  for (const doc of plain) {
+    if (doc.jamiatIncharge && usersMap[doc.jamiatIncharge]) doc.jamiatIncharge = usersMap[doc.jamiatIncharge];
+    if (doc.eventIncharge) {
+      if (doc.eventIncharge.captain && usersMap[doc.eventIncharge.captain]) doc.eventIncharge.captain = usersMap[doc.eventIncharge.captain];
+      if (doc.eventIncharge.viceCaptain && usersMap[doc.eventIncharge.viceCaptain]) doc.eventIncharge.viceCaptain = usersMap[doc.eventIncharge.viceCaptain];
+    }
+    if (doc.createdBy && usersMap[doc.createdBy]) doc.createdBy = usersMap[doc.createdBy];
+
+    doc.assignments = (doc.assignments || []).map((a) => {
+      const aa = { ...a };
+      if (aa.inchargeOfficer && usersMap[aa.inchargeOfficer]) aa.inchargeOfficer = usersMap[aa.inchargeOfficer];
+      if (aa.subInchargeOfficer && usersMap[aa.subInchargeOfficer]) aa.subInchargeOfficer = usersMap[aa.subInchargeOfficer];
+      aa.members = (aa.members || []).map((m) => usersMap[m] ? usersMap[m] : m);
+      return aa;
+    });
+  }
+
+  return plain;
+};
+
 const sendServerError = (res, err, context = "") => {
-  console.error("⚠ DutyChart Error", context, err);
+  console.error("⚠️ DutyChart Error", context, err);
   return res.status(500).json({
     success: false,
     message: "Server error",
@@ -34,9 +100,7 @@ const sendServerError = (res, err, context = "") => {
 // CREATE
 export const createDutyChart = async (req, res) => {
   if (!isAdminOrSuper(req.user.role)) {
-    return res
-      .status(403)
-      .json({ success: false, message: "Forbidden. Admins only." });
+    return res.status(403).json({ success: false, message: "Forbidden. Admins only." });
   }
 
   try {
@@ -44,7 +108,6 @@ export const createDutyChart = async (req, res) => {
       title,
       eventName,
       jamiatIncharge,
-      jamiatInchargeText,
       eventIncharge = {},
       dutyDate,
       reportingTime,
@@ -60,83 +123,59 @@ export const createDutyChart = async (req, res) => {
       });
     }
 
-    // Normalize function
-    const normalizeId = (val) =>
-      val && typeof val === "string" && val.trim() !== "" ? val : null;
-
-    // Sanitize assignments
-    const sanitizeAssignment = (a) => ({
-      ...a,
-      inchargeOfficer: isValidObjectId(a.inchargeOfficer)
-        ? a.inchargeOfficer
-        : null,
-      subInchargeOfficer: isValidObjectId(a.subInchargeOfficer)
-        ? a.subInchargeOfficer
-        : null,
-      members: Array.isArray(a.members)
-        ? a.members.filter((m) => isValidObjectId(m))
-        : [],
+    // sanitize assignments (keep typed strings or ObjectId-strings)
+    const sanitizeAssignment = (a = {}) => ({
+      location: a.location || "",
+      area: a.area || "",
+      inchargeOfficer: normalizeValue(a.inchargeOfficer),
+      subInchargeOfficer: normalizeValue(a.subInchargeOfficer),
+      task: a.task || "",
+      team: a.team || "",
+      members: Array.isArray(a.members) ? a.members.map(normalizeValue).filter(Boolean) : [],
     });
-
-    const sanitizedAssignments = (assignments || []).map(sanitizeAssignment);
 
     const payload = {
       title: title || "Burhani Guards Ujjain Duty Chart",
       eventName,
-      jamiatIncharge: isValidObjectId(jamiatIncharge)
-        ? jamiatIncharge
-        : null,
-      jamiatInchargeText:
-        !isValidObjectId(jamiatIncharge) && jamiatInchargeText
-          ? jamiatInchargeText
-          : undefined,
+      jamiatIncharge: normalizeValue(jamiatIncharge),
       eventIncharge: {
-        captain: normalizeId(eventIncharge.captain),
-        viceCaptain: normalizeId(eventIncharge.viceCaptain),
+        captain: normalizeValue(eventIncharge?.captain),
+        viceCaptain: normalizeValue(eventIncharge?.viceCaptain),
       },
       createdBy: req.user._id || req.user.id || null,
       dutyDate,
       reportingTime,
       dressCode,
-      assignments: sanitizedAssignments.map((a) => ({
-        location: a.location,
-        area: a.area,
-        inchargeOfficer: normalizeId(a.inchargeOfficer),
-        subInchargeOfficer: normalizeId(a.subInchargeOfficer),
-        task: a.task,
-        team: a.team,
-        members: (a.members || []).map(normalizeId).filter(Boolean),
-      })),
+      assignments: (assignments || []).map(sanitizeAssignment),
     };
+
+    // ensure required model-level fields exist (jamiatIncharge is required in schema)
+    if (!payload.jamiatIncharge || (typeof payload.jamiatIncharge === "string" && payload.jamiatIncharge.trim() === "")) {
+  return res.status(400).json({
+    success: false,
+    message: "Please provide a valid Jamiat Incharge (select or type a name).",
+  });
+}
+
 
     const session = await mongoose.startSession();
     session.startTransaction();
 
-    // Validate only real ObjectIds
+    // Validate only real ObjectIds by checking DB existence
     const referencedUserIds = new Set();
-
-    if (isValidObjectId(payload.jamiatIncharge))
-      referencedUserIds.add(payload.jamiatIncharge);
-    if (isValidObjectId(payload.eventIncharge.captain))
-      referencedUserIds.add(payload.eventIncharge.captain);
-    if (isValidObjectId(payload.eventIncharge.viceCaptain))
-      referencedUserIds.add(payload.eventIncharge.viceCaptain);
+    if (isValidObjectId(payload.jamiatIncharge)) referencedUserIds.add(payload.jamiatIncharge);
+    if (isValidObjectId(payload.eventIncharge.captain)) referencedUserIds.add(payload.eventIncharge.captain);
+    if (isValidObjectId(payload.eventIncharge.viceCaptain)) referencedUserIds.add(payload.eventIncharge.viceCaptain);
 
     for (const a of payload.assignments) {
-      if (isValidObjectId(a.inchargeOfficer))
-        referencedUserIds.add(a.inchargeOfficer);
-      if (isValidObjectId(a.subInchargeOfficer))
-        referencedUserIds.add(a.subInchargeOfficer);
-      (a.members || []).forEach((m) => {
-        if (isValidObjectId(m)) referencedUserIds.add(m);
-      });
+      if (isValidObjectId(a.inchargeOfficer)) referencedUserIds.add(a.inchargeOfficer);
+      if (isValidObjectId(a.subInchargeOfficer)) referencedUserIds.add(a.subInchargeOfficer);
+      (a.members || []).forEach((m) => { if (isValidObjectId(m)) referencedUserIds.add(m); });
     }
 
     if (referencedUserIds.size > 0) {
       const refs = Array.from(referencedUserIds);
-      const users = await User.find({ _id: { $in: refs } })
-        .session(session)
-        .select("_id");
+      const users = await User.find({ _id: { $in: refs } }).session(session).select("_id");
       if (users.length !== refs.length) {
         const found = users.map((u) => String(u._id));
         const missing = refs.filter((id) => !found.includes(String(id)));
@@ -150,28 +189,15 @@ export const createDutyChart = async (req, res) => {
       }
     }
 
+    // Save
     const dutyChart = new DutyChart(payload);
     await dutyChart.save({ session });
     await session.commitTransaction();
     session.endSession();
 
-    // Safe populate logic
-    const query = DutyChart.findById(dutyChart._id);
-    const maybePopulate = (field, select) => {
-      const val = dutyChart?.[field?.split(".")[0]];
-      if (val && isValidObjectId(val)) query.populate(field, select);
-    };
-
-    maybePopulate("jamiatIncharge", "name surname itsNumber role");
-    maybePopulate("eventIncharge.captain", "name surname itsNumber role");
-    maybePopulate("eventIncharge.viceCaptain", "name surname itsNumber role");
-    maybePopulate("createdBy", "name surname role");
-
-    query.populate("assignments.inchargeOfficer", "name surname itsNumber role");
-    query.populate("assignments.subInchargeOfficer", "name surname itsNumber role");
-    query.populate("assignments.members", "name surname itsNumber role");
-
-    const populated = await query.exec();
+    // Return saved doc with user objects attached for valid ObjectIds
+    const saved = await DutyChart.findById(dutyChart._id).lean();
+    const [populated] = await attachUserObjects([saved]);
 
     return res.status(201).json({
       success: true,
@@ -197,17 +223,10 @@ export const getAllDutyCharts = async (req, res) => {
 
     if (isMember(req.user.role)) query["assignments.members"] = req.user.id;
 
-    const charts = await DutyChart.find(query)
-      .populate("jamiatIncharge", "name surname itsNumber role")
-      .populate("eventIncharge.captain", "name surname itsNumber role")
-      .populate("eventIncharge.viceCaptain", "name surname itsNumber role")
-      .populate("createdBy", "name surname role")
-      .populate("assignments.inchargeOfficer", "name surname itsNumber role")
-      .populate("assignments.subInchargeOfficer", "name surname itsNumber role")
-      .populate("assignments.members", "name surname itsNumber role")
-      .sort({ dutyDate: -1 });
+    const charts = await DutyChart.find(query).sort({ dutyDate: -1 }).lean();
+    const populated = await attachUserObjects(charts);
 
-    res.status(200).json({ success: true, charts });
+    res.status(200).json({ success: true, charts: populated });
   } catch (err) {
     return sendServerError(res, err, "getAllDutyCharts");
   }
@@ -216,29 +235,21 @@ export const getAllDutyCharts = async (req, res) => {
 // READ SINGLE
 export const getDutyChartById = async (req, res) => {
   try {
-    const chart = await DutyChart.findById(req.params.id)
-      .populate("jamiatIncharge", "name surname itsNumber role")
-      .populate("eventIncharge.captain", "name surname itsNumber role")
-      .populate("eventIncharge.viceCaptain", "name surname itsNumber role")
-      .populate("createdBy", "name surname role")
-      .populate("assignments.inchargeOfficer", "name surname itsNumber role")
-      .populate("assignments.subInchargeOfficer", "name surname itsNumber role")
-      .populate("assignments.members", "name surname itsNumber role");
+    const chart = await DutyChart.findById(req.params.id).lean();
 
     if (!chart)
       return res.status(404).json({ success: false, message: "Duty chart not found" });
 
     if (isMember(req.user.role)) {
-      const isAssigned = chart.assignments.some((a) =>
-        a.members.some((m) => String(m._id) === String(req.user.id))
+      const isAssigned = (chart.assignments || []).some((a) =>
+        (a.members || []).some((m) => String(m) === String(req.user.id))
       );
       if (!isAssigned)
-        return res
-          .status(403)
-          .json({ success: false, message: "Forbidden. Not assigned to this chart." });
+        return res.status(403).json({ success: false, message: "Forbidden. Not assigned to this chart." });
     }
 
-    return res.json({ success: true, dutyChart: chart });
+    const [populated] = await attachUserObjects([chart]);
+    return res.json({ success: true, dutyChart: populated });
   } catch (err) {
     return sendServerError(res, err, "getDutyChartById");
   }
@@ -260,47 +271,34 @@ export const updateDutyChart = async (req, res) => {
       return res.status(404).json({ success: false, message: "Not found" });
     }
 
-    const sanitizeAssignment = (a) => ({
+    const sanitizeAssignment = (a = {}) => ({
       ...a,
-      inchargeOfficer: isValidObjectId(a.inchargeOfficer)
-        ? a.inchargeOfficer
-        : null,
-      subInchargeOfficer: isValidObjectId(a.subInchargeOfficer)
-        ? a.subInchargeOfficer
-        : null,
-      members: Array.isArray(a.members)
-        ? a.members.filter((m) => isValidObjectId(m))
-        : [],
+      inchargeOfficer: normalizeValue(a.inchargeOfficer),
+      subInchargeOfficer: normalizeValue(a.subInchargeOfficer),
+      members: Array.isArray(a.members) ? a.members.map(normalizeValue).filter(Boolean) : [],
     });
 
     const sanitizedAssignments = (req.body.assignments || []).map(sanitizeAssignment);
 
-    Object.assign(chart, {
-      title: req.body.title || chart.title,
-      eventName: req.body.eventName || chart.eventName,
-      jamiatIncharge: isValidObjectId(req.body.jamiatIncharge)
-        ? req.body.jamiatIncharge
-        : chart.jamiatIncharge,
-      dutyDate: req.body.dutyDate || chart.dutyDate,
-      reportingTime: req.body.reportingTime || chart.reportingTime,
-      dressCode: req.body.dressCode || chart.dressCode,
-      assignments: sanitizedAssignments.length
-        ? sanitizedAssignments
-        : chart.assignments,
-    });
+    // assign fields safely (keep existing if incoming value null/undefined)
+    chart.title = req.body.title || chart.title;
+    chart.eventName = req.body.eventName || chart.eventName;
+    chart.jamiatIncharge = normalizeValue(req.body.jamiatIncharge) || chart.jamiatIncharge;
+    chart.dutyDate = req.body.dutyDate || chart.dutyDate;
+    chart.reportingTime = req.body.reportingTime || chart.reportingTime;
+    chart.dressCode = req.body.dressCode || chart.dressCode;
+    chart.eventIncharge = {
+      captain: normalizeValue(req.body.eventIncharge?.captain) || chart.eventIncharge?.captain,
+      viceCaptain: normalizeValue(req.body.eventIncharge?.viceCaptain) || chart.eventIncharge?.viceCaptain,
+    };
+    chart.assignments = sanitizedAssignments.length ? sanitizedAssignments : chart.assignments;
 
     await chart.save({ session });
     await session.commitTransaction();
     session.endSession();
 
-    const populated = await DutyChart.findById(chart._id)
-      .populate("jamiatIncharge", "name surname itsNumber role")
-      .populate("eventIncharge.captain", "name surname itsNumber role")
-      .populate("eventIncharge.viceCaptain", "name surname itsNumber role")
-      .populate("createdBy", "name surname role")
-      .populate("assignments.inchargeOfficer", "name surname itsNumber role")
-      .populate("assignments.subInchargeOfficer", "name surname itsNumber role")
-      .populate("assignments.members", "name surname itsNumber role");
+    const updated = await DutyChart.findById(chart._id).lean();
+    const [populated] = await attachUserObjects([updated]);
 
     return res.json({ success: true, message: "Updated", dutyChart: populated });
   } catch (err) {
