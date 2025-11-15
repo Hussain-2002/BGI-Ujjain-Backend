@@ -92,8 +92,8 @@ router.get(
 );
 
 // =================== MEMBER MANAGEMENT =================== //
-// 🔌 Get all members (SuperAdmin + Admin)
-router.get("/members", auth, allowRoles("SuperAdmin", "Admin"), async (req, res) => {
+// 🔌 Get all members (SuperAdmin + Admin + Finance)
+router.get("/members", auth, allowRoles("SuperAdmin", "Admin", "Finance"), async (req, res) => {
   try {
     const members = await User.find().select("-password");
     res.json(members);
@@ -420,5 +420,19 @@ router.get("/analytics", auth, async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 });
+
+// ⭐ NEW: Get logged-in user (required for frontend notifications & miqaat slips)
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+    if (!user) return res.status(404).json({ msg: "User not found" });
+
+    return res.json(user);
+  } catch (err) {
+    console.error("GET /me error:", err);
+    return res.status(500).json({ msg: "Server error" });
+  }
+});
+
 
 export default router;

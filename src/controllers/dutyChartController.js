@@ -11,6 +11,7 @@
 import mongoose from "mongoose";
 import DutyChart from "../models/DutyChart.js";
 import User from "../models/user.js";
+import { notifyAllUsers } from "../utils/notifyAllUsers.js";
 
 /* ---------- Helpers ---------- */
 
@@ -198,6 +199,21 @@ export const createDutyChart = async (req, res) => {
     // Return saved doc with user objects attached for valid ObjectIds
     const saved = await DutyChart.findById(dutyChart._id).lean();
     const [populated] = await attachUserObjects([saved]);
+        // --- DEBUG: ensure we reached notification point ---
+    try {
+      console.log("🔔 [DEBUG] about to call notifyAllUsers for dutyChart:", dutyChart._id?.toString ? dutyChart._id.toString() : dutyChart._id);
+      await notifyAllUsers(
+        "duty",
+        `A new Duty Chart "${eventName}" has been created.`,
+        req.user._id
+      );
+      console.log("🔔 [DEBUG] notifyAllUsers resolved for dutyChart:", dutyChart._id);
+    } catch (notifyErr) {
+      // log full error (not just message) so we don't miss stack traces
+      console.error("⚠️ [DEBUG] notifyAllUsers failed (duty):", notifyErr);
+    }
+
+
 
     return res.status(201).json({
       success: true,

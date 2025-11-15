@@ -11,6 +11,9 @@ import fs from "fs";
 import authRoutes from "./src/routes/auth.js";
 import adminRoutes from "./src/routes/admin.js";
 import dutyChartRoutes from "./src/routes/dutyChart.js";
+import miqaatRoutes from "./src/routes/miqaat.js";
+import paymentRoutes from "./src/routes/finance.js";
+import notificationRoutes from "./src/routes/notification.js";
 // Mailer utility
 import { verifyMailer } from "./src/utils/mailer.js";
 
@@ -47,24 +50,25 @@ const allowedOrigins = [
 
 const allowVercelPreviews = process.env.ALLOW_VERCEL_PREVIEWS === "true";
 
-// 🔧 Debug logging - startup pe ek baar
+// 🔧 Debug logging
 console.log("✅ Allowed Origins:", allowedOrigins);
 console.log("🔓 Vercel Previews Allowed:", allowVercelPreviews);
 console.log("🌍 Environment:", process.env.NODE_ENV || "development");
 
-// CORS setup
+/*
+=====================================================
+     ⭐ FINAL FIXED CORS CONFIGURATION ⭐
+=====================================================
+*/
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // 🔧 Debug: Har request ka origin log karo
     console.log("🌍 Incoming request origin:", origin || "no-origin");
 
-    if (!origin) {
-      console.log("✅ No origin (server-to-server) - allowed");
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) {
-      console.log("✅ Origin matched in allowedOrigins:", origin);
+      console.log("✅ Origin matched:", origin);
       return callback(null, true);
     }
 
@@ -72,19 +76,19 @@ const corsOptions = {
       try {
         const hostname = new URL(origin).hostname;
         if (/\.vercel\.app$/.test(hostname)) {
-          console.log("✅ Vercel preview domain allowed:", origin);
+          console.log("✅ Vercel preview allowed:", origin);
           return callback(null, true);
         }
       } catch (e) {
-        console.warn("⚠️ Invalid URL format:", origin);
+        console.warn("⚠️ Invalid URL:", origin);
       }
     }
 
-    console.warn("❌ Blocked CORS origin:", origin);
+    console.warn("❌ Blocked origin:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
     "Authorization",
@@ -97,28 +101,29 @@ const corsOptions = {
 // Apply CORS globally
 app.use(cors(corsOptions));
 
-// Handle preflight OPTIONS requests
-app.use((req, res, next) => {
-  if (req.method === "OPTIONS") {
-    const origin = req.headers.origin;
-    
-    // Check if origin is allowed
-    if (origin && allowedOrigins.includes(origin)) {
-      res.header("Access-Control-Allow-Origin", origin);
-      res.header("Access-Control-Allow-Credentials", "true");
-    }
-    
-    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Accept, Origin, X-Requested-With"
-    );
-    
-    console.log("✅ OPTIONS request handled for origin:", origin || "no-origin");
-    return res.sendStatus(200);
+// ⭐ FIXED: global PRE-FLIGHT handler
+app.options(/.*/, (req, res) => {
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
   }
-  next();
+
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Accept, Origin, X-Requested-With"
+  );
+
+  return res.sendStatus(200);
 });
+
+/*
+=====================================================
+   ⭐ END OF FIXED CORS — REST CODE UNTOUCHED ⭐
+=====================================================
+*/
 
 // Connect to MongoDB
 mongoose
@@ -129,7 +134,6 @@ mongoose
   .then(() => {
     console.log("✅ MongoDB connected");
 
-    // Verify mailer
     console.log("📧 Verifying email service...");
     verifyMailer()
       .then(() => console.log("✅ Email service verification completed"))
@@ -149,6 +153,9 @@ mongoose
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/dutychart", dutyChartRoutes);
+app.use("/api/miqaat", miqaatRoutes);
+app.use("/api/finance", paymentRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Health check
 app.get("/", (req, res) => {
@@ -160,7 +167,7 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check endpoint (useful for deployment platforms)
+// Health endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "healthy",
@@ -169,7 +176,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// 🆕 Test endpoint to check if uploads directory is accessible
+// Tests
 app.get("/api/test-uploads", (req, res) => {
   const uploadsPath = path.join(__dirname, 'uploads', 'profiles');
   const exists = fs.existsSync(uploadsPath);
@@ -181,12 +188,10 @@ app.get("/api/test-uploads", (req, res) => {
   });
 });
 
-// Error handling middleware
+// Error handler
 app.use((err, req, res, next) => {
   console.error("❌ Server Error:", err.message);
-  console.error("Stack:", err.stack);
-  
-  // CORS error ko specifically handle karo
+
   if (err.message === "Not allowed by CORS") {
     return res.status(403).json({
       success: false,
@@ -195,7 +200,6 @@ app.use((err, req, res, next) => {
     });
   }
 
-  // Multer file upload errors
   if (err.code === "LIMIT_FILE_SIZE") {
     return res.status(400).json({
       success: false,
@@ -209,35 +213,45 @@ app.use((err, req, res, next) => {
       message: err.message,
     });
   }
-  
+
   res.status(500).json({
     success: false,
     message: "Internal server error",
-    ...(process.env.NODE_ENV === "development" && { 
-      error: err.message,
-      stack: err.stack 
-    }),
   });
 });
 
-// 404 handler
+// Dev test
+import { notifyAllUsers } from "./src/utils/notifyAllUsers.js";
+
+app.post("/api/dev/notify-test", async (req, res) => {
+  try {
+    const { type = "general", message = "Test notification" } = req.body || {};
+    const createdBy = req.body.createdBy || null;
+
+    const nt = await notifyAllUsers(type, message, createdBy);
+    return res.json({ success: true, created: !!nt, notificationId: nt?._id || null });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Server error", error: String(err) });
+  }
+});
+
+// 404
 app.use((req, res) => {
-  console.log("⚠️ 404 - Route not found:", req.method, req.path);
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     message: "Route not found",
-    path: req.path 
+    path: req.path,
   });
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log("\n" + "=".repeat(50));
+  console.log("\n==================================================");
   console.log(`🌐 Server running on port ${PORT}`);
   console.log(`📁 Uploads directory: ${uploadsDir}`);
   console.log(`📧 Email service: SendGrid`);
   console.log(`🔗 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`🕐 Started at: ${new Date().toISOString()}`);
-  console.log("=".repeat(50) + "\n");
+  console.log("==================================================\n");
 });
